@@ -1,6 +1,6 @@
 Flask==2.3.3
 gunicorn
 opencv-python
-tensorflow
 mediapipe
+tensorflow
 numpy
