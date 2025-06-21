@@ -1,5 +1,5 @@
 streamlit
-opencv-python
+numpy
 pillow
-tensorflow
 mediapipe
+tensorflow==2.14.0
