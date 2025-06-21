@@ -1,6 +1,6 @@
-flask
-opencv-python
-dlib
+streamlit
+opencv-python-headless
 numpy
+Pillow
 tensorflow
-pillow
+dlib
