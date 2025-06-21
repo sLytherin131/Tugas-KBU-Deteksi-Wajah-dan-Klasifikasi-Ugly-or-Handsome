@@ -1,0 +1,10 @@
+document.addEventListener("DOMContentLoaded", () => {
+  const status = document.getElementById("status");
+  if (status) {
+    let dots = 0;
+    setInterval(() => {
+      dots = (dots + 1) % 4;
+      status.textContent = "📷 Kamera aktif" + ".".repeat(dots);
+    }, 500);
+  }
+});
