@@ -1,65 +1,85 @@
 import streamlit as st
+import cv2
 import numpy as np
-from PIL import Image, ImageDraw
+from PIL import Image
 import mediapipe as mp
 from tensorflow.keras.models import load_model
 
-# ========== Load Model ==========
+# ===================
+# Load model & assets
+# ===================
+
 @st.cache_resource
 def load_cnn_model():
     return load_model("cnn1_model.h5")
 
 cnn_model = load_cnn_model()
-mp_face_detection = mp.solutions.face_detection
-mp_drawing = mp.solutions.drawing_utils
+haar_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_frontalface_default.xml')
+mp_face_mesh = mp.solutions.face_mesh
 
-# ========== UI ==========
+# ===================
+# UI
+# ===================
 st.title("💁‍♂️ Face Classification App - Handsome vs Ugly")
-st.markdown("Upload gambar wajah atau gunakan kamera, lalu model akan mengklasifikasikan wajah sebagai Handsome atau Ugly.")
+st.markdown("Upload gambar wajah atau gunakan kamera. Model CNN akan mengklasifikasikan wajah sebagai *Handsome* atau *Ugly*.")
 
 input_type = st.radio("Pilih sumber gambar:", ["Upload File", "Kamera"])
+image = None
 
 if input_type == "Upload File":
     uploaded_file = st.file_uploader("Upload Gambar", type=["jpg", "jpeg", "png", "webp"])
     if uploaded_file:
         image = Image.open(uploaded_file).convert("RGB")
 elif input_type == "Kamera":
-    camera_image = st.camera_input("Ambil gambar dari kamera")
+    camera_image = st.camera_input("Ambil Gambar dari Kamera")
     if camera_image:
         image = Image.open(camera_image).convert("RGB")
-else:
-    image = None
 
-# ========== Proses Gambar ==========
-if 'image' in locals() and image is not None:
-    img_np = np.array(image)
-    img_copy = image.copy()
-    draw = ImageDraw.Draw(img_copy)
+# ===================
+# Proses Gambar
+# ===================
+if image:
+    img_rgb = np.array(image)
+    img_copy = img_rgb.copy()
+    faces = haar_cascade.detectMultiScale(img_rgb, scaleFactor=1.1, minNeighbors=5)
 
-    with mp_face_detection.FaceDetection(model_selection=0, min_detection_confidence=0.5) as face_detector:
-        results = face_detector.process(img_np)
+    if len(faces) == 0:
+        st.warning("❌ Tidak ada wajah terdeteksi.")
+    else:
+        with mp_face_mesh.FaceMesh(static_image_mode=True, max_num_faces=1, refine_landmarks=True) as face_mesh:
+            results = face_mesh.process(img_rgb)
 
-        if not results.detections:
-            st.warning("❌ Tidak ada wajah terdeteksi.")
-        else:
-            for detection in results.detections:
-                bbox = detection.location_data.relative_bounding_box
-                h, w, _ = img_np.shape
-                x, y = int(bbox.xmin * w), int(bbox.ymin * h)
-                box_w, box_h = int(bbox.width * w), int(bbox.height * h)
+            if not results.multi_face_landmarks:
+                st.warning("⚠️ Landmark wajah tidak ditemukan.")
+            else:
+                for (x, y, w, h) in faces:
+                    try:
+                        # Ambil landmark
+                        face_landmarks = results.multi_face_landmarks[0]
+                        landmark_points = []
+                        for lm in face_landmarks.landmark[:68]:  # Ambil 68 titik pertama
+                            landmark_points.append(lm.x * img_rgb.shape[1])
+                            landmark_points.append(lm.y * img_rgb.shape[0])
+                        landmark_input = np.expand_dims(np.array(landmark_points).astype(np.float32), axis=0)
 
-                face_img = img_np[y:y+box_h, x:x+box_w]
-                if face_img.shape[0] == 0 or face_img.shape[1] == 0:
-                    continue
+                        # Preprocess wajah
+                        face_img = img_rgb[y:y+h, x:x+w]
+                        if face_img.shape[0] == 0 or face_img.shape[1] == 0:
+                            continue
+                        face_resized = cv2.resize(face_img, (128, 128)) / 255.0
+                        img_input = np.expand_dims(face_resized.astype(np.float32), axis=0)
 
-                face_resized = np.array(Image.fromarray(face_img).resize((128, 128))) / 255.0
-                input_tensor = np.expand_dims(face_resized.astype(np.float32), axis=0)
+                        # Prediksi CNN
+                        pred = cnn_model.predict([img_input, landmark_input])[0][0]
+                        label = "Handsome" if pred >= 0.5 else "Ugly"
+                        color = (0, 255, 0) if pred >= 0.5 else (255, 0, 0)
 
-                pred = cnn_model.predict(input_tensor)[0][0]
-                label = "Handsome" if pred >= 0.5 else "Ugly"
-                color = "green" if pred >= 0.5 else "red"
+                        # Gambar kotak dan label
+                        cv2.rectangle(img_copy, (x, y), (x + w, y + h), color, 2)
+                        cv2.putText(img_copy, f"{label} ({pred:.2f})", (x, y - 10),
+                                    cv2.FONT_HERSHEY_SIMPLEX, 0.8, color, 2)
+                    except Exception as e:
+                        st.error(f"⚠️ Gagal proses wajah di ({x},{y}): {e}")
+                        continue
 
-                draw.rectangle([x, y, x+box_w, y+box_h], outline=color, width=3)
-                draw.text((x, y - 10), f"{label} ({pred:.2f})", fill=color)
-
-            st.image(img_copy, caption="Hasil Klasifikasi", use_column_width=True)
+        st.image(img_copy, caption="Hasil Klasifikasi", use_column_width=True)
