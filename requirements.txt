@@ -1,6 +1,6 @@
 Flask==2.3.3
-opencv-python==4.9.0.80
-numpy
-tensorflow==2.14.0
-mediapipe==0.10.7
 gunicorn
+opencv-python
+tensorflow
+mediapipe
+numpy
